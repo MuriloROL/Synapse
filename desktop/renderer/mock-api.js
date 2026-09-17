@@ -29,6 +29,7 @@
     language: 'pt',
     diarize: true,
     steps: { kanban: true, documento: true },
+    chat: { provider: 'openrouter', openRouterModel: 'qwen/qwen3.8-flash' },
     tts: { engine: 'system', voice: 'pt-BR-FranciscaNeural', rate: '+5%', systemVoice: '' },
   };
 
@@ -456,6 +457,7 @@
       return { ok: true };
     },
     async chatStop() { return { stopped: true }; },
+    async chatApprove() { return { ok: true }; },
     async chatClear(projectId) { chatLog.delete(projectId); return { ok: true }; },
     async chatSetBypass({ projectId, enabled }) {
       const p = projects.find((x) => x.id === projectId);

@@ -834,6 +834,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(0.6); cursor
 }
 .msg-tool::before { content: '▸ '; color: var(--violet); }
 .msg-tool.is-live::before { color: var(--cyan); }
+.msg-meta { padding: 0 4px; font-family: var(--mono); font-size: 9px; color: var(--muted-dim); }
 /* Voz de uma resposta: botão → progresso → player, sob a bolha. */
 .msg-voice { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; min-width: 0; }
 .voice-progress { display: flex; align-items: center; gap: 8px; }
