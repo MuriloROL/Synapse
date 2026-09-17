@@ -81,6 +81,26 @@ function buildAnalysisPrompt({ transcriptPath, jsonPath, context = '', userPromp
     .replaceAll('{{CONTEXTO}}', contextBlock(context));
 }
 
+/**
+ * Versão para APIs de chat: o modelo recebe o conteúdo da transcrição e
+ * devolve o JSON na própria resposta — não precisa ler nem gravar arquivos.
+ */
+function buildOpenRouterAnalysisPrompt({ transcript, context = '', userPromptsDir }) {
+  const template = readPrompt('analise', { userDir: userPromptsDir }).text;
+  return [
+    template
+      .replaceAll('{{TRANSCRICAO}}', 'o conteúdo entre <transcricao> e </transcricao> abaixo')
+      .replaceAll('{{JSON}}', 'a sua própria resposta')
+      .replaceAll('{{CONTEXTO}}', contextBlock(context)),
+    '',
+    '<transcricao>',
+    String(transcript || ''),
+    '</transcricao>',
+    '',
+    'Responda somente com o objeto JSON pedido, sem markdown, comentários ou texto adicional.',
+  ].join('\n');
+}
+
 /** Onde o JSON que o Claude escreve é gravado antes de o app normalizá-lo. */
 function analysisTmpPathFor(transcriptPath) {
   return path.join(
@@ -150,6 +170,7 @@ module.exports = {
   DOCUMENT_SUFFIX,
   analysisTmpPathFor,
   buildAnalysisPrompt,
+  buildOpenRouterAnalysisPrompt,
   buildClaudeArgs,
   describeEvent,
   documentPdfPath,

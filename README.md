@@ -2,7 +2,8 @@
 
 > Grave a reunião — ou solte o vídeo na janela — e receba **transcrição**,
 > **tarefas no Kanban** e **documentos**, organizados por projeto.
-> Roda **na sua máquina**: nada de áudio sai dela.
+> Transcreve na sua máquina; análise e chat usam o modelo escolhido no
+> OpenRouter e enviam o texto da transcrição para esse serviço.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-green.svg)](https://nodejs.org/)
@@ -15,8 +16,8 @@
 1. Você grava pela janela do app — ou pelo **OBS Studio**, se ele estiver
    aberto — ou solta um vídeo/áudio na janela.
 2. O **ffmpeg** extrai o áudio e o **Whisper Large V3** transcreve — local, na
-   GPU — marcando **quem falou** em cada trecho.
-3. O Claude lê a transcrição **uma vez** e devolve a análise da reunião:
+   GPU — marcando **quem falou** em cada trecho. O áudio não sai da máquina.
+3. O OpenRouter lê a transcrição **uma vez** e devolve a análise da reunião:
    visão geral, decisões, riscos e as **ações combinadas**.
 4. Dessa análise saem, juntos, os cards no Kanban do projeto e um **documento
    em PDF** na pasta da reunião — a tabela de tarefas do PDF é a mesma lista
@@ -98,10 +99,10 @@ de novo.
 | **Node.js 20+** | abrir o app | `winget install OpenJS.NodeJS.LTS` · `brew install node` · `apt install nodejs` |
 | **Python 3.11+** | motor de transcrição | `winget install Python.Python.3.12` · `brew install python` · `apt install python3` |
 | **ffmpeg** | extrair o áudio | `winget install Gyan.FFmpeg` · `brew install ffmpeg` · `apt install ffmpeg` |
-| **Claude Code** | análise, tarefas e documentos | <https://claude.com/claude-code> |
+| **Chave OpenRouter** | análise, tarefas, documentos e chat | definida em `.synapse-env` |
 
-O Claude Code fica de fora do instalador de propósito: ele tem login próprio e
-o app roda sem ele — sem análise, sem cards e sem PDF, mas transcrevendo.
+O app não exige Claude Code. Para análise, Kanban, documentos e chat, defina
+`OPENROUTER_API_KEY` em `.synapse-env`.
 
 ### O que roda em cada sistema
 
@@ -181,6 +182,16 @@ exemplo, para apontar o perfil do Claude Code que o chat e a análise usam:
 ```
 CLAUDE_CONFIG_DIR=C:\Users\voce\.claude-work
 ```
+
+**IA pelo OpenRouter:** em **Configurações → IA do chat**, defina o modelo. A
+chave continua apenas em `.synapse-env`:
+
+```
+OPENROUTER_API_KEY=sua_chave
+```
+
+O chat e a análise de reuniões recebem o contexto necessário, mas não leem
+arquivos nem executam comandos na sua máquina. Claude Code não é necessário.
 
 Para atualizar depois, não precisa voltar ao terminal: **Configurações →
 Sobre → Verificar atualização** mostra o que mudou e o botão **Atualizar agora**

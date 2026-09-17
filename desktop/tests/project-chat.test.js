@@ -77,6 +77,15 @@ test('system prompt: o modo muda o que o Claude acha que pode fazer', () => {
   assert.doesNotMatch(buildChatSystemPrompt({ ...base, bypass: false }), /sem pedir permissão/);
 });
 
+test('system prompt: OpenRouter só promete ferramentas controladas', () => {
+  const p = buildChatSystemPrompt({
+    project, meetings: [], tasks: [], meetingsDir: 'C:\\R', workdir: 'C:\\R', bypass: true, provider: 'openrouter',
+  });
+  assert.match(p, /ferramentas controladas/);
+  assert.match(p, /aprovação explícita/);
+  assert.doesNotMatch(p, /modo autônomo/);
+});
+
 test('args: leitura restringe ferramentas e não pede permissão a ninguém', () => {
   const args = buildChatArgs({ sessionId: 'abc', resume: false, bypass: false, systemPromptFile: 'C:\\t\\sp.md', addDirs: ['C:\\R'] });
   assert.deepStrictEqual(args.slice(0, 4), ['-p', '--output-format', 'stream-json', '--verbose']);

@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('api', {
   chatHistory: (projectId) => ipcRenderer.invoke('chat:history', projectId),
   chatSend: (payload) => ipcRenderer.invoke('chat:send', payload),
   chatStop: () => ipcRenderer.invoke('chat:stop'),
+  chatApprove: (payload) => ipcRenderer.invoke('chat:approve', payload),
   chatClear: (projectId) => ipcRenderer.invoke('chat:clear', projectId),
   chatSetBypass: (payload) => ipcRenderer.invoke('chat:setBypass', payload),
   chatTranscribe: (payload) => ipcRenderer.invoke('chat:transcribe', payload),

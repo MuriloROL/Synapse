@@ -204,7 +204,7 @@
 
         <div class="ptab ptab-chat">
           <div class="chat" id="chat-box">
-            <!-- O chat é o Claude Code rodando no projeto: onde ele trabalha,
+            <!-- O chat recebe o contexto do projeto: onde ele trabalha,
                  em que modo, e o recomeço da conversa. -->
             <div class="chat-tools">
               <div class="chat-where">
@@ -217,9 +217,9 @@
                 <span>Voz</span>
               </label>
               <label class="chat-mode" id="chat-mode"
-                     title="Ligado, o Claude lê, escreve e executa comandos nesta máquina sem pedir permissão">
+                     title="O OpenRouter só conversa com o contexto do projeto">
                 <input class="switch danger" type="checkbox" id="chat-bypass" />
-                <span>Modo autônomo</span>
+                <span id="chat-bypass-label">Modo autônomo</span>
               </label>
               <button class="btn ghost" id="chat-new" type="button">Nova conversa</button>
             </div>
@@ -228,7 +228,7 @@
               <button class="icon-btn chat-mic" id="chat-mic" type="button"
                       title="Falar: clique, fale, clique de novo" aria-label="Gravar recado de voz">🎙</button>
               <input class="input chat-input" id="chat-input" type="text" autocomplete="off"
-                     placeholder="Pergunte sobre o projeto ou peça algo — o Claude tem as reuniões e as tarefas à mão" />
+                      placeholder="Pergunte sobre o projeto — a IA tem as reuniões e tarefas à mão" />
               <button class="icon-btn" id="chat-mute" type="button" hidden title="Parar de ler"
                       aria-label="Parar a leitura em voz alta">🔇</button>
               <button class="btn ghost" id="chat-stop" type="button" hidden>Parar</button>
@@ -291,6 +291,21 @@
           </div>
 
           <div class="card">
+            <div class="card-head"><h2>IA do chat</h2></div>
+            <p class="set-lead">O Synapse usa OpenRouter para conversar e analisar reuniões. O áudio continua local,
+              mas o texto da transcrição e o contexto necessário são enviados ao modelo. Ele não acessa arquivos nem executa comandos na sua máquina.</p>
+            <div class="set-row">
+              <div class="set-info"><strong>Provedor</strong><span>OpenRouter · sem instalação adicional</span></div>
+            </div>
+            <div class="set-row" id="set-openrouter-model-row">
+              <div class="set-info"><strong>Modelo</strong><span>identificador do catálogo OpenRouter; escolha um modelo com tool calling</span></div>
+              <input class="input" id="set-openrouter-model" autocomplete="off" placeholder="qwen/qwen3.8-flash" />
+            </div>
+            <p class="set-lead" id="set-openrouter-help">Use uma linha <code>OPENROUTER_API_KEY=...</code>
+              em <code>.synapse-env</code>. A chave fica no seu computador e não é salva nas configurações do Synapse. Transcrições longas podem consumir bastante contexto.</p>
+          </div>
+
+          <div class="card">
             <div class="card-head"><h2>Gravar pelo OBS Studio</h2></div>
             <p class="set-lead">Com o OBS ligado, é ele que grava: o microfone e o som da chamada
                ficam em faixas separadas do arquivo, a gravação não depende desta janela, e o
@@ -317,7 +332,7 @@
           <div class="card">
             <div class="card-head"><h2>Depois da transcrição</h2></div>
             <p class="set-lead">A transcrição sempre sai. Com qualquer etapa abaixo ligada, o
-               Claude lê a reunião uma vez — e essa análise alimenta as duas: as tarefas do
+               A IA lê a reunião uma vez — e essa análise alimenta as duas: as tarefas do
                Kanban e a tabela do documento são a mesma lista.</p>
             <div id="set-steps">
               <label class="set-row set-toggle">
@@ -337,7 +352,7 @@
               <div class="set-row">
                 <div class="set-info">
                   <strong>Prompts</strong>
-                  <span>as instruções que o Claude segue — escolha e edite</span>
+                  <span>as instruções que a IA segue — escolha e edite</span>
                 </div>
                 <div class="set-btns">
                   <select class="input" id="set-prompt-kind" aria-label="Qual prompt"></select>
@@ -352,7 +367,7 @@
             <p class="set-lead">Etapas próprias que rodam depois da transcrição, na ordem em que
                estiverem aqui. Cada uma tem o seu prompt e grava um arquivo na pasta da reunião — e
                a etapa seguinte pode ler o que a anterior escreveu. Uma etapa também pode chamar uma
-               <strong>skill</strong> do Claude Code pelo nome.</p>
+               uma instrução própria por etapa. No OpenRouter, a etapa recebe o conteúdo anterior e o Synapse grava o resultado no arquivo configurado.</p>
             <div id="flow-list" class="flow-list"></div>
             <div class="set-row">
               <div class="set-info"><span id="flow-status"></span></div>
@@ -594,11 +609,8 @@
           <label class="field"><span>Nome do arquivo</span>
             <input class="input" id="mst-file" maxlength="120" placeholder="resumo-cliente.md" />
           </label>
-          <label class="field"><span>Skill do Claude Code (opcional)</span>
-            <input class="input" id="mst-skill" maxlength="80" placeholder="ex.: wiki-ingest" />
-          </label>
         </div>
-        <label class="field"><span>Instruções para o Claude</span>
+        <label class="field"><span>Instruções para a IA</span>
           <textarea class="input prompt-editor" id="mst-prompt" spellcheck="false"
             placeholder="Leia {{TRANSCRICAO}} e escreva um resumo de meia página em {{SAIDA}}."></textarea>
         </label>

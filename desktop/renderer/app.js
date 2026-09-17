@@ -755,15 +755,28 @@ function messageBox(msg) {
   bubble.className = 'bubble';
   renderRichText(bubble, msg.text);
   box.append(bubble);
+  if (msg.role === 'ai' && msg.model) {
+    const meta = document.createElement('small');
+    meta.className = 'msg-meta';
+    const tokens = Number(msg.usage?.total_tokens || 0);
+    meta.textContent = tokens ? `${msg.model} · ${tokens.toLocaleString('pt-BR')} tokens` : msg.model;
+    box.append(meta);
+  }
   if (msg.role === 'ai' && msg.text && !msg.error) box.append(voiceBox(msg));
   return box;
 }
 
 function renderChatTools(p) {
+  const openRouter = settings?.chat?.provider === 'openrouter';
   $('chat-workdir').textContent = p.workdir || 'pasta das reuniões — defina uma pasta de trabalho ao editar o projeto';
   $('chat-workdir').title = p.workdir || '';
-  $('chat-bypass').checked = Boolean(p.chatBypass);
-  $('chat-box').classList.toggle('is-bypass', Boolean(p.chatBypass));
+  $('chat-bypass').checked = !openRouter && Boolean(p.chatBypass);
+  $('chat-bypass').disabled = openRouter;
+  $('chat-bypass-label').textContent = openRouter ? 'Modo conversa' : 'Modo autônomo';
+  $('chat-mode').title = openRouter
+    ? 'OpenRouter responde ao contexto, mas não acessa arquivos nem executa comandos.'
+    : 'Permite ao assistente executar ações na sua pasta de trabalho';
+  $('chat-box').classList.toggle('is-bypass', !openRouter && Boolean(p.chatBypass));
 }
 
 function setChatBusy(busy) {
@@ -787,7 +800,10 @@ async function renderChat() {
   if (!history.length && !live) {
     const empty = document.createElement('p');
     empty.className = 'chat-empty';
-    empty.textContent = p.workdir
+    const openRouter = settings?.chat?.provider === 'openrouter';
+    empty.textContent = openRouter
+      ? 'Este é o OpenRouter com o contexto do projeto, das reuniões e das tarefas. Ele conversa e ajuda a organizar ideias, mas não acessa seus arquivos nem executa ações.'
+      : p.workdir
       ? 'Este é o Claude Code dentro do projeto: ele conhece as reuniões, as tarefas e a pasta de trabalho. Pergunte, peça um resumo, ou peça para fazer.'
       : 'Este é o Claude Code dentro do projeto: ele conhece as reuniões e as tarefas. Defina uma pasta de trabalho no projeto para ele também mexer nos seus arquivos.';
     thread.append(empty);
@@ -819,7 +835,7 @@ $('chat-form').addEventListener('submit', async (e) => {
   const thread = $('chat-thread');
   thread.querySelector('.chat-empty')?.remove();
   thread.append(messageBox({ role: 'user', text: q }));
-  chatLive = startLive(currentProjectId, p.chatBypass);
+  chatLive = startLive(currentProjectId, settings?.chat?.provider !== 'openrouter' && p.chatBypass);
   thread.append(chatLive.box);
   thread.scrollTop = thread.scrollHeight;
   setChatBusy(true);
@@ -834,6 +850,11 @@ $('chat-form').addEventListener('submit', async (e) => {
 
 window.api.on('chat:event', (ev) => {
   const live = chatLive && chatLive.projectId === ev.projectId ? chatLive : null;
+  if (ev.kind === 'approval') {
+    confirmDanger({ title: 'Aprovar ação do assistente?', message: ev.label, confirmLabel: 'Aprovar' })
+      .then((approved) => window.api.chatApprove({ approvalId: ev.approvalId, approved }));
+    return;
+  }
   if (ev.kind === 'done') {
     chatLive = null;
     if (view === 'project' && currentTab === 'chat' && currentProjectId === ev.projectId) {
@@ -1257,6 +1278,7 @@ function renderSettings() {
   loadFlow();
   renderUpdateVersion();
   renderTtsSettings();
+  renderChatSettings();
   const isNative = engines.active === 'native';
   for (const b of $('set-engine').children) {
     b.classList.toggle('is-active', b.dataset.engine === engines.active);
@@ -1283,6 +1305,17 @@ function renderSettings() {
   const saved = isNative ? settings.nativeModel : settings.model;
   if (saved && options.some((o) => o.id === saved)) model.value = saved;
 }
+
+function renderChatSettings() {
+  const chat = settings.chat || { provider: 'openrouter', openRouterModel: 'qwen/qwen3.8-flash' };
+  $('set-openrouter-model').value = chat.openRouterModel || '';
+}
+
+$('set-openrouter-model').addEventListener('change', async () => {
+  const model = $('set-openrouter-model').value.trim();
+  if (!model) { toast('Informe o identificador de um modelo do OpenRouter.'); renderChatSettings(); return; }
+  settings = await window.api.setSettings({ chat: { ...settings.chat, openRouterModel: model } });
+});
 
 $('set-engine').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-engine]');
@@ -2518,12 +2551,6 @@ function renderFlow() {
     nome.textContent = step.name;
     const meta = document.createElement('span');
     meta.className = 'flow-meta';
-    if (step.skill) {
-      const tag = document.createElement('span');
-      tag.className = 'flow-tag';
-      tag.textContent = `skill: ${step.skill}`;
-      meta.append(tag);
-    }
     meta.append(step.builtin ? step.description : stepSummary(step));
     corpo.append(nome, meta);
 
@@ -2614,7 +2641,6 @@ async function openStepModal(id = '') {
   $('mst-input').value = step.input;
   $('mst-output').value = step.output;
   $('mst-file').value = step.fileName;
-  $('mst-skill').value = step.skill;
   $('mst-prompt').value = step.prompt;
   $('mst-error').textContent = '';
   $('mst-delete').hidden = !id;
@@ -2647,7 +2673,6 @@ $('mst-form').addEventListener('submit', async (e) => {
     input: $('mst-input').value,
     output: $('mst-output').value,
     fileName: $('mst-file').value,
-    skill: $('mst-skill').value.trim(),
     prompt: $('mst-prompt').value,
     enabled: true,
   };

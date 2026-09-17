@@ -24,6 +24,8 @@ function toMessage(row) {
     tools: Array.isArray(meta.tools) ? meta.tools : [],
     bypass: Boolean(meta.bypass),
     error: Boolean(meta.error),
+    model: typeof meta.model === 'string' ? meta.model : '',
+    usage: meta.usage && typeof meta.usage === 'object' ? meta.usage : null,
     createdAt: row.created_at,
   };
 }
@@ -39,14 +41,14 @@ function listMessages(dir, projectId, limit = 200) {
   return linhas.reverse().map(toMessage);
 }
 
-function addMessage(dir, { projectId, role, text, tools = [], bypass = false, error = false }) {
+function addMessage(dir, { projectId, role, text, tools = [], bypass = false, error = false, model = '', usage = null }) {
   const conn = db.open(dir);
   if (!conn) return { ok: false, message: 'Pasta de saída indisponível.' };
   if (!ROLES.includes(role)) return { ok: false, message: `Papel desconhecido: ${role}` };
   const existe = conn.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId);
   if (!existe) return { ok: false, message: 'Projeto não encontrado.' };
 
-  const meta = JSON.stringify({ tools, bypass, error });
+  const meta = JSON.stringify({ tools, bypass, error, model, usage });
   const r = conn.prepare(`
     INSERT INTO chat_messages (project_id, role, content, meta, created_at) VALUES (?, ?, ?, ?, ?)
   `).run(projectId, role, String(text ?? ''), meta, Date.now());

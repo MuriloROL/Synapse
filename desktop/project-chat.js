@@ -39,7 +39,7 @@ const fmtDate = (ts) => {
  * fazer é ler e sugerir — o texto diz isso para não prometer o que não faz.
  */
 function buildChatSystemPrompt({
-  project, meetings = [], tasks = [], meetingsDir, workdir, bypass,
+  project, meetings = [], tasks = [], meetingsDir, workdir, bypass, provider = 'claude',
 }) {
   const linhas = [
     'Você é o assistente do Synapse — o segundo cérebro de quem usa o app — trabalhando dentro de um projeto.',
@@ -83,7 +83,12 @@ function buildChatSystemPrompt({
   }
 
   linhas.push('', '## Como agir', '');
-  if (bypass) {
+  if (provider === 'openrouter') {
+    linhas.push(
+      'Você trabalha com ferramentas controladas pelo Synapse. Use-as quando precisar ler, listar ou gravar arquivos do projeto, ou criar uma tarefa.',
+      'Leituras são limitadas à pasta de trabalho. Toda escrita e criação de tarefa precisa da aprovação explícita da pessoa; nunca diga que alterou algo antes de a ferramenta confirmar.',
+    );
+  } else if (bypass) {
     linhas.push(
       'Você está em modo autônomo: pode ler, escrever e executar comandos nesta máquina sem pedir permissão.',
       'Use isso a favor da pessoa: quando a tarefa envolver a máquina (arquivos, código, comandos), faça e conte o que fez.',

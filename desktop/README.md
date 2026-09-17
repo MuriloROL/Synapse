@@ -58,8 +58,7 @@ container e GPU são exclusivos.
   `whisper-cli.exe` em `.whisper-cpp/` e ao menos um modelo `.bin` em
   `.models/`.
 - Motor **Docker**: só o Docker Desktop.
-- Extração de tarefas e PDFs: **Claude Code** instalado e autenticado. O app
-  procura o binário em `~/.local/bin` e no PATH; `CLAUDE_BIN` força um caminho.
+- Extração de tarefas e PDFs: `OPENROUTER_API_KEY` em `.synapse-env`.
 
 ## Rodar
 
@@ -149,7 +148,7 @@ tarefas.
 
 ### Depois da transcrição
 
-O Claude lê a transcrição **uma vez** (`prompts/analise.md`) e devolve a
+O OpenRouter lê a transcrição **uma vez** (`prompts/analise.md`) e devolve a
 análise da reunião em JSON: título, visão geral, pontos discutidos, decisões,
 riscos, tarefas e pendências. O app normaliza esse JSON (`analysis.js`) e o
 guarda em `analise.json`, na pasta da reunião.
@@ -166,7 +165,7 @@ Dessa análise saem as duas coisas, por construção iguais:
 
 Cada uma liga e desliga em **Configurações → Depois da transcrição**
 (`pipeline-steps.js` decide o que roda; com as duas desligadas e sem nome
-automático, o Claude nem é chamado). O botão **Gerar documentos**, no painel da
+automático, nenhuma chamada é feita). O botão **Gerar documentos**, no painel da
 reunião, monta o PDF a partir da análise guardada — e, numa reunião de antes da
 análise existir, pede a análise primeiro.
 
