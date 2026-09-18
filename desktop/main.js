@@ -83,6 +83,12 @@ loadAppEnv();
 // sem tocar nas configurações nem no banco de quem usa a máquina.
 if (process.env.SYNAPSE_USER_DATA) app.setPath('userData', process.env.SYNAPSE_USER_DATA);
 
+// O GNOME/Wayland casa a janela com um atalho pelo "desktop name". Sem dizer
+// qual é, o Electron não casa com o synapse.desktop instalado pelo
+// install.sh e a barra mostra o ícone genérico — por mais que a janela tenha
+// o ícone certo. O valor é o nome do arquivo do atalho.
+if (process.platform === 'linux') app.setDesktopName('synapse.desktop');
+
 // Duas instâncias abririam dois handles no mesmo synapse.db e dois jobs
 // disputariam a mesma pasta. A segunda só traz a primeira para a frente.
 if (!app.requestSingleInstanceLock()) {

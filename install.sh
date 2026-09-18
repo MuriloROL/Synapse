@@ -219,6 +219,33 @@ printf '%s\n' \
 chmod +x synapse
 ok "atalho ./synapse criado"
 
+# O ícone no menu de aplicativos: abrir o Synapse sem passar pela pasta do
+# projeto. O `Exec` e o `Icon` precisam do caminho absoluto — o menu não roda
+# dentro do repositório. Só o menu é criado aqui: fixar na barra é escolha da
+# pessoa (botão direito no ícone → Fixar).
+APPS="$HOME/.local/share/applications"
+mkdir -p "$APPS"
+cat > "$APPS/synapse.desktop" <<DESKTOP
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Synapse
+GenericName=Transcrição de reuniões
+Comment=Transcreva reuniões e gere atas em PDF
+Exec=$RAIZ/synapse
+Icon=$RAIZ/desktop/assets/icon.png
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=transcricao;reuniao;ata;synapse;whisper;
+StartupWMClass=synapse
+StartupNotify=true
+DESKTOP
+chmod +x "$APPS/synapse.desktop"
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$APPS" 2>/dev/null || true
+fi
+ok "ícone no menu de aplicativos (procure por Synapse)"
+
 # --- Pronto ------------------------------------------------------------------
 
 titulo "Pronto."
