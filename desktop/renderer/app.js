@@ -2407,6 +2407,8 @@ function restoreProcessing() {
 
 function stopProcessing() {
   docPhase = false;
+  clearTimeout(docShowTimer);
+  docShowTimer = 0;
   Object.assign(proc, { active: false, minimized: false });
   renderProcessing();
 }
@@ -2452,6 +2454,7 @@ let docProgress = 0;
 let docKinds = DOC_KINDS_ALL;
 let pendingMeetingId = '';
 let jobSummary = null;   // o que contar quando tudo terminar
+let docShowTimer = 0;    // a troca de tela para a fase de PDF, quando diferida
 
 function docStageLabel(kinds) {
   const nomes = kinds.map((k) => DOC_NAMES[k] || k);
@@ -2716,7 +2719,7 @@ $('mst-delete').addEventListener('click', async () => {
 
 $('mst-cancel').addEventListener('click', closeModals);
 
-function enterDocPhase(meetingId, kinds = DOC_KINDS_ALL, { name } = {}) {
+function enterDocPhase(meetingId, kinds = DOC_KINDS_ALL, { name, deferShow = 0 } = {}) {
   docPhase = true;
   docProgress = 0;
   docKinds = kinds.length ? kinds : DOC_KINDS_ALL;
@@ -2724,6 +2727,21 @@ function enterDocPhase(meetingId, kinds = DOC_KINDS_ALL, { name } = {}) {
   if (!proc.active) {
     // Veio do botão da reunião, não do fim do pipeline: abre a tela do zero.
     Object.assign(proc, { active: true, minimized: false, name: name || '' });
+  }
+  if (deferShow) {
+    // Só a troca da tela espera o instante de "Transcrição pronta": a fase
+    // em si já existe desde agora. Um documento rápido fica pronto em
+    // milissegundos — com a fase nascendo só depois do atraso, o seu
+    // `doc:done` chegava antes dela e era perdido, e a tela abria atrasada
+    // esperando um fim que já tinha passado.
+    clearTimeout(docShowTimer);
+    docShowTimer = setTimeout(() => {
+      docShowTimer = 0;
+      if (!docPhase) return;   // o documento terminou antes da troca: nada a mostrar
+      ensureProcessNet();
+      setProcessing(docStageLabel(docKinds), 0);
+    }, deferShow);
+    return;
   }
   ensureProcessNet();
   setProcessing(docStageLabel(docKinds), 0);
@@ -2745,17 +2763,22 @@ window.api.on('job:event', async (event) => {
     setProcessing(STAGE_LABELS[event.key] || event.label || '', overall);
   } else if (event.event === 'done') {
     setProcessing('Transcrição pronta', 1);
+    // Tudo o que a fase de documentos precisa nasce aqui, antes de qualquer
+    // await: a análise já correu no pipeline e um documento rápido fica
+    // pronto em milissegundos — o `doc:done` pode chegar enquanto um
+    // refreshAll ainda está em curso, e não pode encontrar uma fase que
+    // ainda não nasceu.
+    jobSummary = { renamedTo: event.renamedTo || '', tasksCreated: event.tasksCreated || 0 };
+    const docs = Array.isArray(event.docs) ? event.docs : [];
+    if (docs.length) {
+      enterDocPhase(event.meetingId, docs, { deferShow: 700 });
+    }
     await refreshAll();
     // Minimizado, a pessoa está em outra coisa: o projeto não a puxa para lá.
     if (jobProjectId && !proc.minimized) {
       openProject(jobProjectId, event.tasksCreated ? 'kanban' : 'meetings');
     }
-    // Nada de aviso agora: o que aconteceu aqui entra no aviso único do fim.
-    jobSummary = { renamedTo: event.renamedTo || '', tasksCreated: event.tasksCreated || 0 };
-    const docs = Array.isArray(event.docs) ? event.docs : [];
-    if (docs.length) {
-      setTimeout(() => enterDocPhase(event.meetingId, docs), 700);
-    } else {
+    if (!docs.length) {
       // Nenhum PDF ligado em Configurações: a reunião está pronta aqui mesmo.
       setProcessing('Pronto', 1);
       await pausaCurta();
@@ -2777,6 +2800,10 @@ window.api.on('doc:progress', ({ kind }) => {
 });
 
 window.api.on('doc:done', async (result) => {
+  // A tela de PDF pode estar marcada para abrir e ainda não ter aberto: o
+  // documento terminou antes do atraso, e a troca não pode mais acontecer.
+  clearTimeout(docShowTimer);
+  docShowTimer = 0;
   const meetingId = result.meetingId || pendingMeetingId;
   let wasMinimized = false;
   if (docPhase) {
