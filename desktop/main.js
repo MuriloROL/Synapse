@@ -277,6 +277,13 @@ function enableSystemAudioCapture() {
   }, { useSystemPicker: false });
 }
 
+// O ícone da janela: no Windows o `.ico` é o formato certo; no Linux e no
+// macOS o Electron ignora `.ico` e cai no ícone padrão dele — ali o PNG é que
+// desenha a janela e a barra de tarefas.
+const APP_ICON = process.platform === 'win32'
+  ? path.join(__dirname, 'assets', 'icon.ico')
+  : path.join(__dirname, 'assets', 'icon.png');
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -285,7 +292,7 @@ function createWindow() {
     minHeight: 660,
     backgroundColor: '#070A14',
     title: 'Synapse',
-    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    icon: APP_ICON,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
