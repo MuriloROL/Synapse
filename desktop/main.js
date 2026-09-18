@@ -320,6 +320,27 @@ function send(channel, payload) {
   }
 }
 
+/**
+ * O diário de erros do processo principal.
+ *
+ * Sem ele, uma exceção num caminho de trabalho some: o app segue de pé, mas
+ * aquele trabalho nunca anuncia o fim — e a tela fica esperando. O arquivo
+ * fica ao lado das configurações, com data e hora.
+ */
+function logAppError(where, err) {
+  try {
+    const detalhe = err && err.stack ? err.stack : String(err);
+    fs.appendFileSync(
+      path.join(app.getPath('userData'), 'synapse-error.log'),
+      `${new Date().toISOString()} [${where}] ${detalhe}\n`,
+      'utf-8',
+    );
+  } catch { /* o diário não pode derrubar o app */ }
+}
+
+process.on('uncaughtException', (err) => logAppError('uncaughtException', err));
+process.on('unhandledRejection', (reason) => logAppError('unhandledRejection', reason));
+
 // --- Transcrição ------------------------------------------------------------
 
 /**
@@ -1110,7 +1131,10 @@ async function cancelJob() {
  * documento declara, em vez de reimprimir tudo em Letter.
  *
  * O veredito é o arquivo no disco: uma promessa resolvida com PDF vazio não
- * conta.
+ * conta — e, pela mesma razão, um arquivo com bytes dentro conta como pronto
+ * mesmo que a janela escondida falhe ao morrer depois de gravar. Sem isso, um
+ * tropeço no fim sumia com o aviso de que o documento terminou, e a tela
+ * ficava presa em "Gerando ... em PDF" com o PDF já no disco.
  */
 async function printToPdf(html, pdfPath) {
   const htmlTmp = path.join(app.getPath('temp'), `synapse-documento-${Date.now()}.html`);
@@ -1125,22 +1149,42 @@ async function printToPdf(html, pdfPath) {
 
   try {
     unlinkTolerant(pdfPath);   // um PDF antigo não pode passar por resultado novo
-    await impressora.loadFile(htmlTmp);
-    const pdf = await impressora.webContents.printToPDF({
+    await comLimite(impressora.loadFile(htmlTmp), 120000);
+    const pdf = await comLimite(impressora.webContents.printToPDF({
       pageSize: 'A4',
       preferCSSPageSize: true,
       printBackground: true,
-    });
+    }), 120000);
     fs.writeFileSync(pdfPath, pdf);
-
-    const ok = fs.existsSync(pdfPath) && fs.statSync(pdfPath).size > 0;
-    return ok ? { ok: true } : { ok: false, message: 'O PDF saiu vazio.' };
   } catch (err) {
-    return { ok: false, message: `Não foi possível gerar o PDF: ${err.message}` };
+    // A impressão falhou ou passou do tempo — mas se o arquivo saiu, o
+    // documento está pronto e não pode virar erro.
+    if (!fs.existsSync(pdfPath) || fs.statSync(pdfPath).size === 0) {
+      return { ok: false, message: `Não foi possível gerar o PDF: ${err.message}` };
+    }
   } finally {
-    impressora.destroy();
+    // Destruir a janela escondida não pode derrubar o resultado: uma exceção
+    // aqui rejeitaria a promessa e sumiria com o aviso de fim.
+    try { impressora.destroy(); } catch (err) { logAppError('printToPdf.destroy', err); }
     try { fs.unlinkSync(htmlTmp); } catch { /* já removido */ }
   }
+
+  const ok = fs.existsSync(pdfPath) && fs.statSync(pdfPath).size > 0;
+  return ok ? { ok: true } : { ok: false, message: 'O PDF saiu vazio.' };
+}
+
+/** A promessa ou o tempo: uma impressão que não responde não pode prender a fila. */
+function comLimite(promessa, ms) {
+  return new Promise((resolve, reject) => {
+    const alarme = setTimeout(
+      () => reject(new Error(`a impressão passou de ${Math.round(ms / 1000)}s sem responder`)),
+      ms,
+    );
+    promessa.then(
+      (valor) => { clearTimeout(alarme); resolve(valor); },
+      (erro) => { clearTimeout(alarme); reject(erro); },
+    );
+  });
 }
 
 /**
@@ -1164,7 +1208,21 @@ function enqueueDocs(meetingId, kinds = DOC_KINDS) {
 
 async function runDocQueue() {
   while (docQueue.length) {
-    await generateDocs(docQueue[0]);
+    const item = docQueue[0];
+    try {
+      await generateDocs(item);
+    } catch (err) {
+      // `generateDocs` já avisa a janela; aqui é para a fila não parar — um
+      // item que falha não pode deixar os próximos esperando para sempre.
+      logAppError('runDocQueue', err);
+      send('doc:done', {
+        meetingId: item.meetingId,
+        ok: false,
+        canceled: false,
+        kinds: [],
+        message: `Falha ao gerar o documento: ${err.message}`,
+      });
+    }
     docQueue.shift();
   }
 }
@@ -1190,26 +1248,35 @@ async function generateDocs({ meetingId }) {
   const savePath = analysisPath(meeting.dir, meeting.legacy);
   let analysis = readAnalysis(savePath);
   let message = '';
-  if (!analysis) {
-    const r = await analyzeMeeting({
-      transcriptPath: meeting.transcript,
-      context: meeting.project?.context || '',
-      savePath,
-      register: (child) => { if (currentDocJob) currentDocJob.child = child; },
-      onProgress: ({ detail }) => progress(detail),
-    });
-    analysis = r.analysis;
-    message = r.message;
-  }
-
   let ok = false;
-  if (analysis && !currentDocJob?.canceled) {
-    progress('montando o documento');
-    const html = renderDocumentHtml({ meeting: workspace.toMeeting(meeting, meeting.project), analysis });
-    progress('convertendo para PDF');
-    const r = await printToPdf(html, documentPdfPath(meeting.transcript));
-    ok = r.ok;
-    if (!ok) message = r.message;
+  try {
+    if (!analysis) {
+      const r = await analyzeMeeting({
+        transcriptPath: meeting.transcript,
+        context: meeting.project?.context || '',
+        savePath,
+        register: (child) => { if (currentDocJob) currentDocJob.child = child; },
+        onProgress: ({ detail }) => progress(detail),
+      });
+      analysis = r.analysis;
+      message = r.message;
+    }
+
+    if (analysis && !currentDocJob?.canceled) {
+      progress('montando o documento');
+      const html = renderDocumentHtml({ meeting: workspace.toMeeting(meeting, meeting.project), analysis });
+      progress('convertendo para PDF');
+      const r = await printToPdf(html, documentPdfPath(meeting.transcript));
+      ok = r.ok;
+      if (!ok) message = r.message;
+    }
+  } catch (err) {
+    // `send('doc:done')` é a única forma de a janela saber que este trabalho
+    // terminou: uma exceção daqui para baixo deixaria a tela esperando para
+    // sempre, mesmo com o PDF já no disco. O erro vira resposta.
+    logAppError('generateDocs', err);
+    ok = false;
+    message = `Falha ao gerar o documento: ${err.message}`;
   }
 
   const canceled = Boolean(currentDocJob?.canceled);
