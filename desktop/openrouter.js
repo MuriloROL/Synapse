@@ -24,19 +24,29 @@ function buildOpenRouterMessages({ systemPrompt, history = [], message }) {
   return messages;
 }
 
-function errorMessage(response) {
+function errorMessage(response, body = {}) {
+  const detail = String(body?.error?.message || body?.message || '').trim();
+  const code = String(body?.error?.code || body?.code || '').trim();
+  const reason = [code, detail].filter(Boolean).join(': ');
   if (response.status === 401 || response.status === 403) return 'A chave do OpenRouter foi recusada. Confira OPENROUTER_API_KEY.';
-  if (response.status === 429) return 'O OpenRouter atingiu o limite de uso. Tente de novo em alguns instantes.';
-  return `O OpenRouter não respondeu (HTTP ${response.status}).`;
+  if (response.status === 429) {
+    return reason
+      ? `O OpenRouter recusou esta solicitação (HTTP 429): ${reason}`
+      : 'O OpenRouter recusou esta solicitação por limite de requisições (HTTP 429). Tente de novo em alguns instantes.';
+  }
+  return reason
+    ? `O OpenRouter não respondeu (HTTP ${response.status}): ${reason}`
+    : `O OpenRouter não respondeu (HTTP ${response.status}).`;
 }
 
-async function sendOpenRouterChat({ apiKey, model, messages, tools, fetchImpl = fetch, signal }) {
+async function sendOpenRouterChat({ apiKey, model, fallbackModels, messages, tools, fetchImpl = fetch, signal }) {
   if (!String(apiKey || '').trim()) {
     return { ok: false, message: 'Falta OPENROUTER_API_KEY no arquivo .synapse-env.' };
   }
 
   let response;
   try {
+    const models = [...new Set((fallbackModels || []).map((item) => String(item || '').trim()).filter(Boolean))];
     response = await fetchImpl(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -44,7 +54,12 @@ async function sendOpenRouterChat({ apiKey, model, messages, tools, fetchImpl = 
         'Content-Type': 'application/json',
         'X-OpenRouter-Title': 'Synapse',
       },
-      body: JSON.stringify({ model, messages, ...(tools ? { tools, parallel_tool_calls: false } : {}), stream: false }),
+      body: JSON.stringify({
+        ...(models.length ? { models } : { model }),
+        messages,
+        ...(tools ? { tools, parallel_tool_calls: false } : {}),
+        stream: false,
+      }),
       signal,
     });
   } catch (err) {
@@ -54,7 +69,7 @@ async function sendOpenRouterChat({ apiKey, model, messages, tools, fetchImpl = 
 
   let body = null;
   try { body = await response.json(); } catch { /* a mensagem abaixo cobre resposta inválida */ }
-  if (!response.ok) return { ok: false, message: errorMessage(response) };
+  if (!response.ok) return { ok: false, message: errorMessage(response, body) };
 
   const assistant = body?.choices?.[0]?.message;
   const meta = { model: String(body?.model || model), usage: body?.usage || null };
@@ -69,7 +84,32 @@ async function sendOpenRouterChat({ apiKey, model, messages, tools, fetchImpl = 
 
 function parseJsonResponse(text) {
   const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  try { return JSON.parse(raw); } catch { return null; }
+  try { return JSON.parse(raw); } catch { /* tenta extrair o objeto da resposta */ }
+
+  // Alguns modelos de raciocínio deixam a trilha de pensamento antes do
+  // resultado, mesmo quando foram instruídos a devolver só JSON. Localizamos
+  // o primeiro objeto completo sem confundir chaves dentro de strings.
+  for (let start = raw.indexOf('{'); start >= 0; start = raw.indexOf('{', start + 1)) {
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let end = start; end < raw.length; end += 1) {
+      const char = raw[end];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === '{') depth += 1;
+      if (char === '}') depth -= 1;
+      if (depth === 0) {
+        try { return JSON.parse(raw.slice(start, end + 1)); } catch { break; }
+      }
+    }
+  }
+  return null;
 }
 
 module.exports = {

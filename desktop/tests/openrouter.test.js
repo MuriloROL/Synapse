@@ -40,6 +40,21 @@ test('OpenRouter: envia contrato compatível e devolve o texto', async () => {
   assert.deepEqual(result, { ok: true, text: 'Olá!', model: 'openai/gpt-4o-mini', usage: null });
 });
 
+test('OpenRouter: envia alternativas em ordem quando há fallback', async () => {
+  let request;
+  await sendOpenRouterChat({
+    apiKey: 'secret', model: 'qwen/primario',
+    fallbackModels: ['qwen/primario', 'qwen/alternativo', 'qwen/primario'],
+    messages: [{ role: 'user', content: 'oi' }],
+    fetchImpl: async (_url, init) => {
+      request = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+    },
+  });
+  assert.deepEqual(request.models, ['qwen/primario', 'qwen/alternativo']);
+  assert.equal('model' in request, false);
+});
+
 test('OpenRouter: traduz erros sem vazar a chave', async () => {
   const result = await sendOpenRouterChat({
     apiKey: 'secret', model: 'x', messages: [],
@@ -50,8 +65,27 @@ test('OpenRouter: traduz erros sem vazar a chave', async () => {
   assert.doesNotMatch(result.message, /secret/);
 });
 
-test('OpenRouter: aceita JSON puro ou cercado por markdown na análise', () => {
+test('OpenRouter: preserva o motivo do limite de requisições devolvido pela API', async () => {
+  const result = await sendOpenRouterChat({
+    apiKey: 'secret', model: 'x', messages: [],
+    fetchImpl: async () => ({
+      status: 429,
+      ok: false,
+      json: async () => ({ error: { code: 'rate_limit_exceeded', message: 'Provider is temporarily busy.' } }),
+    }),
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.message, /HTTP 429/);
+  assert.match(result.message, /rate_limit_exceeded/);
+  assert.match(result.message, /Provider is temporarily busy/);
+  assert.doesNotMatch(result.message, /secret/);
+});
+
+test('OpenRouter: aceita JSON puro, markdown ou uma trilha de raciocínio na análise', () => {
   assert.deepEqual(parseJsonResponse('{"title":"Weekly"}'), { title: 'Weekly' });
   assert.deepEqual(parseJsonResponse('```json\n{"tasks":[]}\n```'), { tasks: [] });
+  assert.deepEqual(parseJsonResponse('<think>vou organizar as tarefas</think>\n{"title":"{Weekly}","tasks":[]}'), {
+    title: '{Weekly}', tasks: [],
+  });
   assert.equal(parseJsonResponse('não é JSON'), null);
 });
