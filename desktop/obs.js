@@ -14,6 +14,7 @@
  */
 
 const path = require('node:path');
+const fs = require('node:fs');
 
 const { McpClient } = require('./mcp-client');
 
@@ -105,7 +106,53 @@ async function status(config) {
 }
 
 const startRecording = (config) => call(normalizeObs(config), 'obs_start_recording');
-const stopRecording = (config) => call(normalizeObs(config), 'obs_stop_recording');
+
+const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Espera o OBS terminar de fechar o arquivo da gravação.
+ *
+ * O `StopRecord` responde antes de o muxer fechar o MP4/MKV: ler nesse instante
+ * pega o arquivo pela metade, e a transcrição perde o fim da reunião **sem dar
+ * erro nenhum** — o áudio simplesmente acaba cedo. O tamanho parar de crescer é
+ * o sinal de que terminou; a espera mínima cobre o fechamento que não muda o
+ * tamanho (o `moov` do MP4 híbrido é reescrito no lugar).
+ */
+async function esperarArquivoFechar(
+  caminho,
+  { intervaloMs = 250, estavelMs = 750, minimoMs = 1500, limiteMs = 20000 } = {},
+) {
+  if (!caminho) return false;
+  const inicio = Date.now();
+  await dormir(minimoMs);
+  let anterior = -1;
+  let estavel = 0;
+  while (Date.now() - inicio < limiteMs) {
+    let tamanho = -1;
+    try { tamanho = fs.statSync(caminho).size; } catch { tamanho = -1; }
+    if (tamanho >= 0 && tamanho === anterior) {
+      estavel += intervaloMs;
+      if (estavel >= estavelMs) return true;
+    } else {
+      estavel = 0;
+      anterior = tamanho;
+    }
+    await dormir(intervaloMs);
+  }
+  return false;
+}
+
+/**
+ * Encerra a gravação e só devolve o caminho quando o arquivo está fechado.
+ *
+ * Sem a espera, o app começava a transcrever um arquivo ainda em finalização e
+ * a reunião saía truncada.
+ */
+async function stopRecording(config) {
+  const r = await call(normalizeObs(config), 'obs_stop_recording');
+  if (r.ok && r.outputPath) await esperarArquivoFechar(r.outputPath);
+  return r;
+}
 const recordingStatus = (config) => call(normalizeObs(config), 'obs_recording_status');
 const pauseRecording = (config, resume = false) =>
   call(normalizeObs(config), 'obs_pause_recording', { resume });
@@ -120,6 +167,7 @@ function shutdown() {
 module.exports = {
   DEFAULT_OBS,
   SERVER_PATH,
+  esperarArquivoFechar,
   normalizeObs,
   pauseRecording,
   recordingStatus,

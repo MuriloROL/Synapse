@@ -12,7 +12,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { normalizeObs, DEFAULT_OBS } = require('../obs');
+const { normalizeObs, DEFAULT_OBS, esperarArquivoFechar } = require('../obs');
 const { countTracks } = require('../../mcp-obs/recording');
 const { authenticationString, explainConnectionError } = require('../../mcp-obs/obs-websocket');
 const server = require('../../mcp-obs/server');
@@ -113,4 +113,33 @@ test('ferramenta inexistente responde com isError, não derruba o servidor', asy
   const r = await server.callTool('obs_dançar', {});
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /desconhecida/);
+});
+
+test('a espera só libera depois que o arquivo da gravação para de crescer', async () => {
+  // O OBS responde ao StopRecord antes de fechar o arquivo; processar nesse
+  // instante trunca a reunião. Aqui o arquivo cresce por um tempo e depois
+  // para — a espera não pode liberar enquanto ele ainda cresce.
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const pathMod = require('node:path');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'obs-espera-'));
+  const arquivo = pathMod.join(dir, 'gravacao.mp4');
+  fs.writeFileSync(arquivo, Buffer.alloc(8));
+
+  const crescendo = setInterval(() => fs.appendFileSync(arquivo, Buffer.alloc(8)), 40);
+  setTimeout(() => clearInterval(crescendo), 300);
+
+  const t0 = Date.now();
+  const ok = await esperarArquivoFechar(arquivo, {
+    intervaloMs: 40, estavelMs: 120, minimoMs: 0, limiteMs: 4000,
+  });
+  const decorrido = Date.now() - t0;
+
+  assert.equal(ok, true);
+  assert.ok(decorrido >= 280, `liberou antes do arquivo fechar (${decorrido}ms)`);
+
+  const tamanho = fs.statSync(arquivo).size;
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(fs.statSync(arquivo).size, tamanho, 'ainda crescia ao liberar');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
