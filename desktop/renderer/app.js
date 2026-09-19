@@ -623,10 +623,14 @@ function kanbanCard(t) {
   prio.className = `prio prio-${t.priority}`;
   prio.title = `prioridade ${PRIO_LABEL[t.priority]}`;
   foot.append(prio);
-  if (t.assignee) {
+  // No card, a origem vale mais que o responsável: mostra a reunião onde a
+  // tarefa nasceu. Tarefa criada à mão, sem reunião, mantém o responsável.
+  const quem = t.meeting ? t.meeting.name : t.assignee;
+  if (quem) {
     const who = document.createElement('span');
     who.className = 'kcard-who';
-    who.textContent = t.assignee;
+    who.textContent = quem;
+    who.title = t.meeting ? `Reunião: ${t.meeting.name}` : `Responsável: ${t.assignee}`;
     foot.append(who);
   }
   if (t.meeting) {
