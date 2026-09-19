@@ -1764,6 +1764,54 @@ $('drawer-rename-ai').addEventListener('click', async () => {
   }
 });
 
+/**
+ * Move a reunião aberta para um projeto — ou tira de qualquer um.
+ *
+ * A pasta vai para a raiz do projeto escolhido e o id muda; por isso o painel
+ * fecha e a tela se atualiza, em vez de continuar apontando para o id antigo.
+ */
+$('drawer-move').addEventListener('click', async () => {
+  const m = await window.api.getMeeting(drawerMeetingId);
+  if (!m) return;
+  const lista = $('mm-list');
+  lista.replaceChildren();
+
+  const opcao = (valor, rotulo, atual) => {
+    const label = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'mm-projeto';
+    radio.value = valor;
+    radio.checked = atual;
+    const span = document.createElement('span');
+    span.textContent = rotulo;
+    label.append(radio, span);
+    return label;
+  };
+
+  lista.append(opcao('', 'Sem projeto', !m.project));
+  // Busca na hora: um projeto criado depois do último carregamento precisa
+  // aparecer aqui, e a lista em memória pode estar velha.
+  const disponiveis = await window.api.listProjects();
+  for (const p of disponiveis) lista.append(opcao(p.id, p.name, m.project?.id === p.id));
+  $('mm-error').textContent = '';
+  openModal('modal-move');
+});
+
+$('mm-cancel').addEventListener('click', closeModals);
+
+$('mm-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const escolhido = document.querySelector('input[name="mm-projeto"]:checked');
+  const projectId = escolhido ? escolhido.value : '';
+  const r = await window.api.moveMeetingToProject(drawerMeetingId, projectId);
+  if (!r.ok) { $('mm-error').textContent = r.message; return; }
+  closeModals();
+  await refreshAll();
+  closeDrawer();
+  toast(projectId ? 'Reunião movida para o projeto.' : 'Reunião movida para sem projeto.');
+});
+
 $('drawer-delete').addEventListener('click', async () => {
   const ok = await confirmDanger({
     title: 'Excluir esta reunião?',
@@ -1832,7 +1880,7 @@ $('md-cancel').addEventListener('click', () => closeDanger(false));
 
 function closeModals() {
   $('modal-scrim').hidden = true;
-  for (const id of ['modal-project', 'modal-task', 'modal-confirm', 'modal-prompt', 'modal-step']) {
+  for (const id of ['modal-project', 'modal-task', 'modal-confirm', 'modal-prompt', 'modal-step', 'modal-move']) {
     $(id).hidden = true;
   }
 }

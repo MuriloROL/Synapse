@@ -454,6 +454,8 @@
         <button class="btn ghost" id="drawer-rename" type="button">Renomear</button>
         <button class="btn ghost" id="drawer-rename-ai" type="button"
                 title="A IA lê a reunião e sugere o nome">✨ Renomear com IA</button>
+        <button class="btn ghost" id="drawer-move" type="button"
+                title="Move a reunião para a pasta de um projeto">Mover para projeto</button>
         <button class="btn ghost danger" id="drawer-delete" type="button">Excluir</button>
       </div>
       <p class="err" id="drawer-error"></p>
@@ -579,6 +581,20 @@
           <span class="spacer"></span>
           <button class="btn ghost" id="mpr-cancel" type="button">Cancelar</button>
           <button class="btn solid" type="submit">Salvar</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="modal" id="modal-move" hidden>
+      <h2>Mover para projeto</h2>
+      <p class="modal-sub" id="mm-sub">a reunião e as tarefas dela vão para a pasta do projeto escolhido</p>
+      <form id="mm-form">
+        <div class="mm-list" id="mm-list"></div>
+        <p class="err" id="mm-error"></p>
+        <div class="modal-actions">
+          <span class="spacer"></span>
+          <button class="btn ghost" id="mm-cancel" type="button">Cancelar</button>
+          <button class="btn solid" type="submit">Mover</button>
         </div>
       </form>
     </div>

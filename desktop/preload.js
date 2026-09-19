@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteMeeting: (id, files) => ipcRenderer.invoke('meetings:delete', { id, files }),
   assignProject: (meetingId, projectId) =>
     ipcRenderer.invoke('meetings:assign', { meetingId, projectId }),
+  moveMeetingToProject: (meetingId, projectId) =>
+    ipcRenderer.invoke('meetings:moveToProject', { meetingId, projectId }),
   readFile: (filePath) => ipcRenderer.invoke('meetings:read', filePath),
   downloadFile: (filePath) => ipcRenderer.invoke('meetings:download', filePath),
 

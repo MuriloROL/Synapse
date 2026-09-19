@@ -1359,6 +1359,29 @@ function buildImage() {
   });
 }
 
+/**
+ * Move uma reunião para um projeto — ou para fora de qualquer um.
+ *
+ * A reunião vive, no disco, na raiz do projeto (`workdir/synapse`) ou na pasta
+ * de saída geral. Agregar depois de criada é mover a pasta e levar os vínculos
+ * junto: o id muda ao entrar ou sair de um projeto, e as tarefas que nasceram
+ * da reunião apontam para o id.
+ */
+function moveMeetingToProject(dir, meetingId, projectId) {
+  const alvo = projectId ? projects.getProject(dir, projectId) : null;
+  if (projectId && !alvo) return { ok: false, message: 'Projeto não encontrado.' };
+
+  const r = library.relocateMeeting(dir, meetingId, library.meetingsRootFor(dir, alvo), projectId);
+  if (!r.ok) return { ok: false, message: r.message };
+
+  if (r.id !== meetingId) {
+    projects.renameMeeting(dir, meetingId, r.id);
+    tasks.renameMeeting(dir, meetingId, r.id);
+  }
+  projects.assignMeeting(dir, r.id, projectId);
+  return { ok: true, id: r.id, moved: r.moved };
+}
+
 // --- IPC --------------------------------------------------------------------
 
 const outDir = () => loadSettings().outputDir;
@@ -1406,6 +1429,8 @@ ipcMain.handle('meetings:renameWithAi', (_e, { id }) => renameMeetingWithAi(outD
 ipcMain.handle('meetings:delete', (_e, { id, files }) => deleteMeetingEverywhere(outDir(), id, files));
 ipcMain.handle('meetings:assign', (_e, { meetingId, projectId }) =>
   projects.assignMeeting(outDir(), meetingId, projectId));
+ipcMain.handle('meetings:moveToProject', (_e, { meetingId, projectId = '' }) =>
+  moveMeetingToProject(outDir(), meetingId, projectId));
 ipcMain.handle('meetings:read', (_e, filePath) => library.readText(filePath));
 
 // Tarefas do Kanban.

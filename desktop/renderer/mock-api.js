@@ -284,6 +284,12 @@
       m.projectId = projectId || '';
       return { ok: true };
     },
+    async moveMeetingToProject(meetingId, projectId) {
+      const m = meetings.find((x) => x.id === meetingId);
+      if (!m) return { ok: false, message: 'Reunião não encontrada.' };
+      m.projectId = projectId || '';
+      return { ok: true, id: m.id, moved: true };
+    },
 
     // --- Tarefas (Kanban) ---
     async tasksForMeeting(meetingId) {
