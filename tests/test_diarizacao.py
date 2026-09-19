@@ -115,6 +115,52 @@ class TestExtracaoDeAudio:
         config = tmp_config.model_copy(update={"whisper_diarize": True})
         assert self._canais(config, monkeypatch, canais_na_origem=1) == "1"
 
+    def test_faixas_separadas_do_obs_viram_dois_canais(self, tmp_config, monkeypatch):
+        # Duas trilhas de áudio (OBS): juntar em canais, não escolher uma — sem
+        # isso o ffmpeg usaria só a primeira e metade da conversa sumiria.
+        from meeting_processor import audio
+
+        capturado: dict[str, list[str]] = {}
+
+        def fake_run(cmd, **kwargs):
+            capturado["cmd"] = cmd
+            Path(cmd[-1]).write_bytes(b"\0" * 64)
+            return type("R", (), {"stderr": "", "stdout": "", "returncode": 0})()
+
+        monkeypatch.setattr(audio, "validate_ffmpeg", lambda: True)
+        monkeypatch.setattr(audio, "audio_stream_count", lambda _p: 2)
+        monkeypatch.setattr(audio, "audio_channels", lambda _p: 1)
+        monkeypatch.setattr(audio.subprocess, "run", fake_run)
+        config = tmp_config.model_copy(update={"whisper_diarize": True})
+
+        audio.extract_audio(Path("C:/videos/obs.mkv"), config)
+        cmd = capturado["cmd"]
+        assert "-filter_complex" in cmd
+        filtro = cmd[cmd.index("-filter_complex") + 1]
+        assert "amerge=inputs=2" in filtro
+        assert "[t0][t1]" in filtro
+        assert cmd[cmd.index("-map") + 1] == "[out]"
+        assert cmd[cmd.index("-ac") + 1] == "2"
+
+    def test_faixa_unica_segue_o_caminho_de_sempre(self, tmp_config, monkeypatch):
+        from meeting_processor import audio
+
+        capturado: dict[str, list[str]] = {}
+
+        def fake_run(cmd, **kwargs):
+            capturado["cmd"] = cmd
+            Path(cmd[-1]).write_bytes(b"\0" * 64)
+            return type("R", (), {"stderr": "", "stdout": "", "returncode": 0})()
+
+        monkeypatch.setattr(audio, "validate_ffmpeg", lambda: True)
+        monkeypatch.setattr(audio, "audio_stream_count", lambda _p: 1)
+        monkeypatch.setattr(audio, "audio_channels", lambda _p: 2)
+        monkeypatch.setattr(audio.subprocess, "run", fake_run)
+        config = tmp_config.model_copy(update={"whisper_diarize": True})
+
+        audio.extract_audio(Path("C:/videos/reuniao.mp4"), config)
+        assert "-filter_complex" not in capturado["cmd"]
+
 
 class TestTranscricaoEscrita:
     @staticmethod

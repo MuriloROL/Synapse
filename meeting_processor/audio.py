@@ -97,6 +97,37 @@ def audio_channels(file_path: Path) -> int:
         return 0
 
 
+def audio_stream_count(file_path: Path) -> int:
+    """Quantas trilhas de áudio o arquivo tem.
+
+    Uma gravação do OBS com faixas separadas traz o microfone numa trilha e o
+    som da máquina em outra. São trilhas distintas, e não canais: sem juntá-las
+    depois, o ffmpeg escolhe só a primeira e metade da conversa se perde.
+
+    Devolve 0 quando não dá para saber (arquivo sem áudio, ffprobe ausente).
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "quiet",
+                "-select_streams", "a",
+                "-show_entries", "stream=index",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=PROBE_TIMEOUT_SECONDS,
+        )
+        return len([linha for linha in (result.stdout or "").splitlines() if linha.strip()])
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return 0
+
+
 def extract_audio(video_path: Path, config: Settings) -> Path:
     """Extrai áudio WAV 16kHz do vídeo para transcrição com Whisper.
 
@@ -135,26 +166,56 @@ def extract_audio(video_path: Path, config: Settings) -> Path:
     output_path = config.temp_path / f"{ascii_slug(video_path.stem)}.{path_hash}.wav"
     config.temp_path.mkdir(parents=True, exist_ok=True)
 
-    # Estéreo só quando a gravação de fato tem dois lados para separar.
-    channels = "2" if config.whisper_diarize and audio_channels(video_path) >= 2 else "1"
+    # Faixas separadas (OBS): microfone na trilha 1, sistema na trilha 2.
+    # Juntá-las é o que transforma duas trilhas em dois canais — sem isto o
+    # ffmpeg usaria só a primeira e a outra metade da conversa sumiria.
+    separar_faixas = config.whisper_diarize and audio_stream_count(video_path) >= 2
+    # Estéreo também quando a faixa única já tem dois canais para separar. A
+    # sondagem só acontece com a diarização ligada: desligada, o áudio é mono.
+    canais_origem = (
+        audio_channels(video_path) if config.whisper_diarize and not separar_faixas else 0
+    )
+    channels = "2" if config.whisper_diarize and (separar_faixas or canais_origem >= 2) else "1"
     logger.info(
         "Extraindo áudio de %s (%s)...",
         video_path.name,
-        "estéreo, para separar quem fala" if channels == "2" else "mono",
+        "faixas 1 e 2 em canais separados, para marcar quem fala" if separar_faixas
+        else ("estéreo, para separar quem fala" if channels == "2" else "mono"),
     )
+
+    comando = [
+        "ffmpeg",
+        "-i", str(video_path),
+        "-vn",                  # sem vídeo
+        "-acodec", "pcm_s16le", # WAV PCM 16-bit
+        "-ar", "16000",         # 16kHz (padrão Whisper)
+        "-ac", channels,        # mono, ou estéreo para a diarização
+        "-y",                   # sobrescrever se existir
+        str(output_path),
+    ]
+    if separar_faixas:
+        # Cada trilha vira mono e entra num canal: trilha 1 à esquerda (quem
+        # está nesta máquina), trilha 2 à direita (o resto da chamada) — a
+        # mesma convenção da captura do próprio app.
+        comando = [
+            "ffmpeg",
+            "-i", str(video_path),
+            "-vn",
+            "-filter_complex",
+            "[0:a:0]aformat=channel_layouts=mono[t0];"
+            "[0:a:1]aformat=channel_layouts=mono[t1];"
+            "[t0][t1]amerge=inputs=2[out]",
+            "-map", "[out]",
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "2",
+            "-y",
+            str(output_path),
+        ]
 
     try:
         subprocess.run(
-            [
-                "ffmpeg",
-                "-i", str(video_path),
-                "-vn",                  # sem vídeo
-                "-acodec", "pcm_s16le", # WAV PCM 16-bit
-                "-ar", "16000",         # 16kHz (padrão Whisper)
-                "-ac", channels,        # mono, ou estéreo para a diarização
-                "-y",                   # sobrescrever se existir
-                str(output_path),
-            ],
+            comando,
             capture_output=True,
             text=True,
             encoding="utf-8",
