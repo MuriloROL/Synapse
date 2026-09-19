@@ -443,6 +443,9 @@ function startJob(payload) {
     projectId: payload.projectId || '',
     autoName: Boolean(payload.autoName),   // deixa a IA nomear pelo conteúdo
     cleanup: payload.cleanup || '',        // gravação temporária, apagada no fim
+    // Vídeo que pertence a quem gravou (OBS) e deve ir para a pasta da reunião
+    // ao fim: guardamos o caminho para mover depois.
+    archiveSource: payload.archiveSource ? videoPath : '',
   };
 
   let stdoutBuffer = '';
@@ -469,7 +472,7 @@ function startJob(payload) {
           if (event.meetingId && projectId) {
             projects.assignMeeting(dir, event.meetingId, projectId);
           }
-          finishJob(event, dir, projectId, currentJob?.autoName);
+          finishJob(event, dir, projectId, currentJob?.autoName, currentJob?.archiveSource || '');
           continue;   // o done é anunciado depois da análise
         }
         if (event.event === 'error') lastError = event.message;
@@ -759,7 +762,7 @@ function relocateProjectMeetings(dir, projectId, toRoot, toProjectId) {
   return { moved, failures };
 }
 
-async function finishJob(event, outputDir, projectId, autoName = false) {
+async function finishJob(event, outputDir, projectId, autoName = false, archiveSource = '') {
   const transcricao = event.files.find((f) => f.toLowerCase().endsWith('.md'));
   const fluxo = loadFlow();
   const analise = fluxo.find((s) => s.id === flows.ANALYSIS_STEP_ID);
@@ -830,6 +833,35 @@ async function finishJob(event, outputDir, projectId, autoName = false) {
   // O documento ligado em Configurações sai sozinho. Fora do caminho do aviso
   // de pronto: a transcrição já está na tela enquanto o PDF é montado.
   if (event.docs.length) enqueueDocs(event.meetingId, event.docs);
+
+  // A gravação original (OBS) vai para dentro da pasta da reunião, junto da
+  // transcrição e do documento, em vez de ficar perdida na pasta de vídeos.
+  if (archiveSource) archiveRecording(outputDir, event.meetingId, archiveSource);
+}
+
+/**
+ * Leva o vídeo de origem para dentro da pasta da reunião, preservando o nome.
+ *
+ * Mover, e não copiar: uma gravação de tela tem gigabytes, e a pasta de vídeos
+ * de quem gravou não precisa guardar uma segunda cópia. Entre discos, copia e
+ * apaga — `renameSync` sozinho falharia com EXDEV.
+ */
+function archiveRecording(outputDir, meetingId, sourcePath) {
+  try {
+    const meeting = meetingId ? library.getMeeting(outputDir, meetingId) : null;
+    if (!meeting?.dir || !sourcePath || !fs.existsSync(sourcePath)) return;
+    const destino = path.join(meeting.dir, path.basename(sourcePath));
+    if (fs.existsSync(destino)) return;
+    try {
+      fs.renameSync(sourcePath, destino);
+    } catch (err) {
+      if (err.code !== 'EXDEV') throw err;
+      fs.cpSync(sourcePath, destino);
+      fs.rmSync(sourcePath, { force: true });
+    }
+  } catch (err) {
+    logAppError('archiveRecording', err);
+  }
 }
 
 /**
@@ -1400,10 +1432,11 @@ ipcMain.handle('obs:pause', (_e, { resume = false } = {}) =>
  * A gravação do OBS entra no pipeline como qualquer vídeo solto na janela.
  *
  * Sem `cleanup`: o arquivo é do OBS, está na pasta de vídeos de quem gravou, e
- * apagá-lo depois de transcrever seria apagar material que não é nosso.
+ * apagá-lo depois de transcrever seria apagar material que não é nosso. Ele é
+ * arquivado na pasta da reunião (`archiveSource`), não descartado.
  */
 ipcMain.handle('obs:process', (_e, { videoPath, name, projectId, autoName, recordedAt }) =>
-  startJob({ videoPath, name, projectId, autoName, recordedAt }));
+  startJob({ videoPath, name, projectId, autoName, recordedAt, archiveSource: true }));
 ipcMain.handle('transcript:import', (_e, payload) => importTranscriptJob(payload));
 
 // Documentos: o front manda o id da reunião; aqui viram caminho e contexto.
